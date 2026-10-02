@@ -5,7 +5,7 @@
  *   - S3: sample photos for those submissions
  *
  * Usage (after the infrastructure stack is deployed):
- *   AWS_REGION=ca-central-1 STACK_NAME=ras-safety-infra-dev yarn seed
+ *   AWS_REGION=us-east-1 STACK_NAME=ras-safety-infra-dev yarn seed
  * Safe to run again: IDs are deterministic, so rows are overwritten, not duplicated.
  */
 import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation';
@@ -37,7 +37,7 @@ import {
 import { SubmissionDomain } from '../services/safety-api/src/domain/submission.domain';
 import { Keys } from '../services/safety-api/src/infrastructure/dynamo-keys';
 
-const REGION = process.env.AWS_REGION ?? 'ca-central-1';
+const REGION = process.env.AWS_REGION ?? 'us-east-1';
 const STACK_NAME = process.env.STACK_NAME ?? 'ras-safety-infra-dev';
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? 'RasAdmin2026';
 const FRAMER_PASSWORD = process.env.SEED_FRAMER_PASSWORD ?? 'RasFramer2026';

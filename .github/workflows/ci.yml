@@ -65,8 +65,8 @@ jobs:
 
       - name: Validate templates
         run: |
-          sam validate --lint -t infrastructure/template.yaml --region ca-central-1
-          sam validate --lint -t services/safety-api/template.yaml --region ca-central-1
+          sam validate --lint -t infrastructure/template.yaml --region us-east-1
+          sam validate --lint -t services/safety-api/template.yaml --region us-east-1
 
       - name: SAM build (safety-api)
         working-directory: services/safety-api
@@ -76,5 +76,5 @@ jobs:
         run: yarn build:web
         env:
           VITE_API_URL: https://example.invalid/dev
-          VITE_COGNITO_USER_POOL_ID: ca-central-1_example
+          VITE_COGNITO_USER_POOL_ID: us-east-1_example
           VITE_COGNITO_CLIENT_ID: example

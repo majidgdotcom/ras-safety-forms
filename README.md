@@ -20,7 +20,7 @@ Framers fill in a daily safety form (checklist + photos) on their phone. Supervi
 
 | | |
 |---|---|
-| **Live app** | https://YOUR-DISTRIBUTION.cloudfront.net |
+| **Live app** | https://d16ttaywxz57j1.cloudfront.net |
 | **ERD** | [docs/ERD.md](docs/ERD.md) · [docs/erd.png](docs/erd.png) |
 | **Admin login** | `admin@example.com` / `RasAdmin2026` |
 | **Framer login** | `framer@example.com` / `RasFramer2026` (has **not** submitted today, so you can try the form) |
@@ -144,12 +144,12 @@ Full explanation and the ERD: **[docs/ERD.md](docs/ERD.md)**
 - Yarn ≥ 1.22
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
 - esbuild (`npm install -g esbuild`) — used by `sam build`
-- AWS CLI configured (`aws configure`) — examples use region `ca-central-1`
+- AWS CLI configured (`aws configure`) — examples use region `us-east-1`
 
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/<you>/ras-safety-forms.git
+git clone https://github.com/majidgdotcom/ras-safety-forms.git
 cd ras-safety-forms
 yarn install
 yarn test
@@ -200,7 +200,7 @@ The deploy prints `SafetyApiUrl` in the Outputs section — note it for the fron
 ### 4. Seed demo data
 
 ```bash
-AWS_REGION=ca-central-1 STACK_NAME=ras-safety-infra-dev yarn seed
+AWS_REGION=us-east-1 STACK_NAME=ras-safety-infra-dev yarn seed
 ```
 
 Creates the 2 test logins above + 5 more framers, 5 sites and ~10 days of forms with photos. Safe to run again (deterministic IDs).
@@ -215,8 +215,8 @@ cp .env.example .env.local
 Fill in `.env.local` with values from the deploy outputs:
 
 ```env
-VITE_API_URL=https://xxxxxxxxxx.execute-api.ca-central-1.amazonaws.com/dev
-VITE_COGNITO_USER_POOL_ID=ca-central-1_XXXXXXXXX
+VITE_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev
+VITE_COGNITO_USER_POOL_ID=us-east-1_XXXXXXXXX
 VITE_COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
@@ -263,9 +263,9 @@ Errors always look like `{ "success": false, "code": "...", "error": "...", "det
 ## CI/CD Pipeline
 
 ```
-feature/* → pull request → main
+feature/* → pull request (CI) → main
                  ↓            ↓
-                CI          CD (prod)   ·   manual run: dev / staging / prod
+                           CD: manual run → dev / staging / prod
 ```
 
 ### CI (runs on every PR)
@@ -274,7 +274,7 @@ feature/* → pull request → main
 3. Template lint + `sam build` check
 4. Frontend build
 
-### CD (runs on merge to `main`, or manually)
+### CD (manual: Actions tab → CD → Run workflow)
 1. Deploy infrastructure stack
 2. Read its outputs (no IDs copied by hand)
 3. `sam build` + `sam deploy` safety-api
@@ -287,7 +287,7 @@ feature/* → pull request → main
 |---|---|
 | `AWS_ACCESS_KEY_ID` | IAM access key |
 | `AWS_SECRET_ACCESS_KEY` | IAM secret key |
-| `AWS_REGION` (variable) | Optional, default `ca-central-1` |
+| `AWS_REGION` (variable) | Optional, default `us-east-1` |
 
 ---
 

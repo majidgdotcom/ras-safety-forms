@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.build/
+.aws-sam/
+coverage/
+.env
+.env.*
+!.env.example
+samconfig.toml
+*.log
+.DS_Store
+.vercel

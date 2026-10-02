@@ -1,0 +1,130 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, staging, prod]
+
+jobs:
+  deploy:
+    name: Deploy (${{ inputs.environment || 'prod' }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'prod' }}
+    env:
+      DEPLOY_ENV: ${{ inputs.environment || 'prod' }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'ca-central-1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Setup Python (SAM)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install SAM CLI + esbuild
+        run: |
+          pip install aws-sam-cli
+          npm install -g esbuild
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # ── 1. Infrastructure (DynamoDB + Cognito + S3 + CloudFront) ─────────────
+      - name: Deploy infrastructure
+        run: |
+          aws cloudformation deploy \
+            --stack-name ras-safety-infra-${DEPLOY_ENV} \
+            --template-file infrastructure/template.yaml \
+            --parameter-overrides Environment=${DEPLOY_ENV} \
+            --no-fail-on-empty-changeset
+
+      - name: Read infrastructure outputs
+        id: infra
+        run: |
+          out() { aws cloudformation describe-stacks --stack-name ras-safety-infra-${DEPLOY_ENV} \
+            --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+          echo "pool_arn=$(out CognitoUserPoolArn)"        >> $GITHUB_OUTPUT
+          echo "pool_id=$(out CognitoUserPoolId)"          >> $GITHUB_OUTPUT
+          echo "client_id=$(out CognitoClientId)"          >> $GITHUB_OUTPUT
+          echo "table=$(out DynamoTableName)"              >> $GITHUB_OUTPUT
+          echo "photos=$(out PhotoBucketName)"             >> $GITHUB_OUTPUT
+          echo "web_bucket=$(out WebsiteBucketName)"       >> $GITHUB_OUTPUT
+          echo "cf_id=$(out CloudFrontDistributionId)"     >> $GITHUB_OUTPUT
+          echo "web_url=$(out WebsiteUrl)"                 >> $GITHUB_OUTPUT
+
+      # ── 2. API service (Lambda + API Gateway) ────────────────────────────────
+      - name: Build safety-api
+        working-directory: services/safety-api
+        run: sam build
+
+      - name: Deploy safety-api
+        working-directory: services/safety-api
+        run: |
+          sam deploy \
+            --stack-name ras-safety-api-${DEPLOY_ENV} \
+            --resolve-s3 \
+            --s3-prefix ras-safety-api \
+            --region ${AWS_REGION} \
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
+            --parameter-overrides \
+              Environment=${DEPLOY_ENV} \
+              CognitoUserPoolArn=${{ steps.infra.outputs.pool_arn }} \
+              DynamoTableName=${{ steps.infra.outputs.table }} \
+              PhotoBucketName=${{ steps.infra.outputs.photos }} \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Read API URL
+        id: api
+        run: |
+          echo "url=$(aws cloudformation describe-stacks --stack-name ras-safety-api-${DEPLOY_ENV} \
+            --query "Stacks[0].Outputs[?OutputKey=='SafetyApiUrl'].OutputValue" --output text)" >> $GITHUB_OUTPUT
+
+      # ── 3. Frontend (S3 + CloudFront) ────────────────────────────────────────
+      - name: Build frontend
+        run: yarn build:web
+        env:
+          VITE_API_URL: ${{ steps.api.outputs.url }}
+          VITE_COGNITO_USER_POOL_ID: ${{ steps.infra.outputs.pool_id }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.infra.outputs.client_id }}
+
+      - name: Deploy to S3
+        working-directory: frontend
+        run: |
+          aws s3 sync dist/ s3://${{ steps.infra.outputs.web_bucket }} \
+            --delete \
+            --cache-control "public, max-age=31536000" \
+            --exclude "index.html"
+          aws s3 cp dist/index.html s3://${{ steps.infra.outputs.web_bucket }}/index.html \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.infra.outputs.cf_id }} \
+            --paths "/*"
+
+      - name: Print URLs
+        run: |
+          echo "Website: ${{ steps.infra.outputs.web_url }}"
+          echo "API:     ${{ steps.api.outputs.url }}"

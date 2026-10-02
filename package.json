@@ -1,0 +1,26 @@
+{
+  "name": "ras-safety-forms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RAS Site Safety Forms - React + AWS serverless (Lambda, DynamoDB, Cognito, S3)",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "frontend",
+    "scripts"
+  ],
+  "scripts": {
+    "typecheck": "yarn workspaces run typecheck",
+    "test": "yarn workspaces run test",
+    "dev": "yarn workspace @ras/frontend dev",
+    "build:web": "yarn workspace @ras/frontend build",
+    "seed": "yarn workspace @ras/scripts seed"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.0",
+    "typescript": "5.6.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

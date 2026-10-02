@@ -1,0 +1,45 @@
+erDiagram
+    USER ||--o{ SUBMISSION : "submits"
+    SITE ||--o{ SUBMISSION : "is for"
+    SUBMISSION ||--|{ PHOTO : "has (1..6)"
+    SUBMISSION ||--|| DAY_LOCK : "reserves"
+
+    USER {
+        string userId PK "Cognito sub"
+        string email "unique login"
+        string name
+        enum role "ADMIN | FRAMER (Cognito group)"
+        datetime createdAt
+    }
+    SITE {
+        string siteId PK
+        string name
+        string address
+        boolean active
+        datetime createdAt
+    }
+    SUBMISSION {
+        string submissionId PK "uuid"
+        string userId FK "-> USER"
+        string siteId FK "-> SITE"
+        string workerName "copy at submit time"
+        string siteName "copy at submit time"
+        date date "work day YYYY-MM-DD"
+        map checklist "8 answers YES|NO|NA"
+        string notes "required if any NO"
+        enum status "PASS | ATTENTION"
+        int photoCount
+        datetime createdAt
+    }
+    PHOTO {
+        string photoId PK
+        string submissionId FK "-> SUBMISSION"
+        string s3Key "submissions/id/photoId.jpg"
+        string contentType "jpeg|png|webp"
+        int sizeBytes "max 10 MB"
+        datetime uploadedAt
+    }
+    DAY_LOCK {
+        string userId_siteId_date PK "unique per worker+site+day"
+        string submissionId FK "-> SUBMISSION"
+    }

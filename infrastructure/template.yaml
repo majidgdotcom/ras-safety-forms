@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RAS Site Safety - shared infrastructure (DynamoDB, Cognito, S3 photos, S3 + CloudFront website)
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, staging, prod]
+    Default: dev
+
+Resources:
+
+  # ─── DynamoDB (single table) ──────────────────────────────────────────────
+  SafetyTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub 'ras-safety-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
+          AttributeType: S
+        - AttributeName: GSI3PK
+          AttributeType: S
+        - AttributeName: GSI3SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1            # users by role, sites list, submissions by worker
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI2            # submissions by site
+          KeySchema:
+            - AttributeName: GSI2PK
+              KeyType: HASH
+            - AttributeName: GSI2SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI3            # all submissions by date
+          KeySchema:
+            - AttributeName: GSI3PK
+              KeyType: HASH
+            - AttributeName: GSI3SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # ─── Cognito (login + roles) ──────────────────────────────────────────────
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'ras-safety-users-${Environment}'
+      UsernameAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true   # internal tool: no public sign-up
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      MfaConfiguration: 'OFF'
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'ras-safety-web-${Environment}'
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        - COGNITO
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Admin
+      Description: Supervisors - see every submission
+      UserPoolId: !Ref CognitoUserPool
+      Precedence: 1
+
+  FramerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Framer
+      Description: Workers - create and see their own submissions
+      UserPoolId: !Ref CognitoUserPool
+      Precedence: 2
+
+  # ─── S3: private photo storage ────────────────────────────────────────────
+  PhotoBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ras-safety-photos-${Environment}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:            # browser uploads straight to S3 (presigned POST)
+        CorsRules:
+          - AllowedMethods: [POST, GET]
+            AllowedOrigins:
+              - !Sub 'https://${WebsiteDistribution.DomainName}'
+              - 'http://localhost:5173'
+            AllowedHeaders: ['*']
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteAbandonedUploads   # photos uploaded but never attached to a form
+            Status: Enabled
+            Prefix: pending/
+            ExpirationInDays: 1
+
+  # ─── Website hosting: S3 (private) + CloudFront (HTTPS) ───────────────────
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ras-safety-web-${Environment}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  WebsiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub 'ras-safety-web-oac-${Environment}'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  WebsiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub 'RAS Site Safety (${Environment})'
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: website
+            DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            OriginAccessControlId: !Ref WebsiteOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: website
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6   # AWS managed "CachingOptimized"
+          Compress: true
+        # React Router: unknown paths (e.g. /admin/submissions) must return index.html
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${WebsiteBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebsiteDistribution}'
+
+Outputs:
+  DynamoTableName:
+    Value: !Ref SafetyTable
+    Export:
+      Name: !Sub '${Environment}-RasSafety-DynamoTableName'
+  CognitoUserPoolId:
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub '${Environment}-RasSafety-CognitoUserPoolId'
+  CognitoUserPoolArn:
+    Value: !GetAtt CognitoUserPool.Arn
+    Export:
+      Name: !Sub '${Environment}-RasSafety-CognitoUserPoolArn'
+  CognitoClientId:
+    Value: !Ref CognitoUserPoolClient
+    Export:
+      Name: !Sub '${Environment}-RasSafety-CognitoClientId'
+  PhotoBucketName:
+    Value: !Ref PhotoBucket
+    Export:
+      Name: !Sub '${Environment}-RasSafety-PhotoBucketName'
+  WebsiteBucketName:
+    Value: !Ref WebsiteBucket
+  CloudFrontDistributionId:
+    Value: !Ref WebsiteDistribution
+  WebsiteUrl:
+    Value: !Sub 'https://${WebsiteDistribution.DomainName}'

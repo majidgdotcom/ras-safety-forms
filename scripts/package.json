@@ -1,0 +1,23 @@
+{
+  "name": "@ras/scripts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "seed": "tsx seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"(scripts) no tests\""
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.650.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.650.0",
+    "@aws-sdk/client-dynamodb": "^3.650.0",
+    "@aws-sdk/client-s3": "^3.650.0",
+    "@aws-sdk/lib-dynamodb": "^3.650.0",
+    "@ras/shared": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.0",
+    "tsx": "^4.19.0",
+    "typescript": "5.6.3"
+  }
+}

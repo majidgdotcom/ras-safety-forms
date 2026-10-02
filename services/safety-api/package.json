@@ -1,0 +1,29 @@
+{
+  "name": "@ras/safety-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "sam build",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:unit": "jest --testPathPattern=unit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.650.0",
+    "@aws-sdk/client-s3": "^3.650.0",
+    "@aws-sdk/lib-dynamodb": "^3.650.0",
+    "@aws-sdk/s3-presigned-post": "^3.650.0",
+    "@aws-sdk/s3-request-presigner": "^3.650.0",
+    "@ras/shared": "1.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.16.0",
+    "esbuild": "^0.24.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "5.6.3"
+  }
+}

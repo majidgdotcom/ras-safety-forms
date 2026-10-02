@@ -1,0 +1,255 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: RAS Site Safety - API service (API Gateway + Cognito authorizer + one Lambda per endpoint)
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, staging, prod]
+  CognitoUserPoolArn:
+    Type: String
+  DynamoTableName:
+    Type: String
+  PhotoBucketName:
+    Type: String
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+    Description: Website origin allowed by CORS, e.g. https://dxxxx.cloudfront.net
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 15
+    CodeUri: ../../
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref DynamoTableName
+        PHOTO_BUCKET: !Ref PhotoBucketName
+        ALLOWED_ORIGIN: !Ref AllowedOrigin
+        ENVIRONMENT: !Ref Environment
+
+Resources:
+
+  SafetyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: !Sub "'${AllowedOrigin}'"
+        MaxAge: "'600'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Ref CognitoUserPoolArn
+        AddDefaultAuthorizerToCorsPreflight: false
+      # So the browser can read 401/403 errors returned by the authorizer itself
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${AllowedOrigin}'"
+
+  GetMeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: get-me.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoTableName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /me
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/get-me.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+  ListSitesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: list-sites.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DynamoTableName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /sites
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/list-sites.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+  CreateUploadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: create-upload-url.handler
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref PhotoBucketName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /photos/upload-url
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/create-upload-url.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+  CreateSubmissionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: create-submission.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoTableName
+        - S3CrudPolicy:
+            BucketName: !Ref PhotoBucketName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /submissions
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/create-submission.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+  ListSubmissionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: list-submissions.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DynamoTableName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /submissions
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/list-submissions.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+  GetSubmissionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: get-submission.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DynamoTableName
+        - S3ReadPolicy:
+            BucketName: !Ref PhotoBucketName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /submissions/{submissionId}
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/get-submission.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+  AdminSummaryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: admin-summary.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DynamoTableName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /admin/summary
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/admin-summary.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+  AdminWorkersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: admin-workers.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DynamoTableName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SafetyApi
+            Path: /admin/workers
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [services/safety-api/src/handlers/admin-workers.ts]
+        Bundle: true
+        Minify: true
+        Target: es2022
+        Sourcemap: false
+
+Outputs:
+  SafetyApiUrl:
+    Value: !Sub 'https://${SafetyApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${Environment}-RasSafety-ApiUrl'
